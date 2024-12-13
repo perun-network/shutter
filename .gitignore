@@ -142,3 +142,10 @@ cython_debug/
 /.circleci/.cpcache/
 /.circleci/.nrepl-port
 /.circleci/continue-generated.yml
+
+
+# Generated when signing SGX enclave with EGo
+*.pem
+enclave.json
+# "go test -c" outputs.
+*.test
