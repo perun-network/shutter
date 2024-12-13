@@ -2,9 +2,11 @@
 package keyper
 
 import (
+	"bytes"
 	"context"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -24,6 +26,7 @@ import (
 	"github.com/shutter-network/shutter/shuttermint/contract"
 	"github.com/shutter-network/shutter/shuttermint/keyper/fx"
 	"github.com/shutter-network/shutter/shuttermint/keyper/observe"
+	"github.com/shutter-network/shutter/shuttermint/keyper/tee"
 )
 
 // IsWebsocketURL returns true iff the given URL is a websocket URL, i.e. if it starts with ws://
@@ -318,9 +321,7 @@ func (kpr *Keyper) LoadState() error {
 	log.Printf("Loading state from %s", gobpath)
 
 	defer gobfile.Close()
-	dec := gob.NewDecoder(gobfile)
-	st := storedState{}
-	err = dec.Decode(&st)
+	st, err := loadStoredState(gobfile)
 	if err != nil {
 		return err
 	}
@@ -353,18 +354,52 @@ func (kpr *Keyper) saveState() error {
 		Shutter:   world.Shutter,
 		MainChain: world.MainChain,
 	}
-	enc := gob.NewEncoder(file)
-	err = enc.Encode(st)
-	if err != nil {
+	if err = writeStoredState(file, st); err != nil {
 		return err
 	}
-
 	err = file.Sync()
 	if err != nil {
 		return err
 	}
 	err = os.Rename(tmppath, gobpath)
 	return err
+}
+
+func writeStoredState(file io.Writer, st storedState) error {
+	stateGob := new(bytes.Buffer)
+	err := gob.NewEncoder(stateGob).Encode(st)
+	if err != nil {
+		return err
+	}
+
+	secret, err := tee.SealSecret(stateGob.Bytes())
+	if err != nil {
+		return err
+	}
+
+	if _, err = file.Write(secret); err != nil {
+		return err
+	}
+	return nil
+}
+
+func loadStoredState(file io.Reader) (st storedState, err error) {
+	sealed := new(bytes.Buffer)
+	_, err = sealed.ReadFrom(file)
+	if err != nil {
+		return
+	}
+
+	var secret []byte
+	secret, err = tee.UnsealSecret(sealed.Bytes())
+	if err != nil {
+		return
+	}
+	gobbuf := bytes.NewBuffer(secret)
+
+	dec := gob.NewDecoder(gobbuf)
+	err = dec.Decode(&st)
+	return
 }
 
 func (kpr *Keyper) runActions(ctx context.Context) error {
