@@ -4,7 +4,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"reflect"
@@ -16,6 +15,8 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
+
+	"github.com/shutter-network/shutter/shuttermint/keyper/tee"
 )
 
 // Config contains validated configuration parameters for the keyper client.
@@ -57,9 +58,9 @@ MainChainFollowDistance = {{ .MainChainFollowDistance }}
 GasPriceMultiplier      = {{ .GasPriceMultiplier }}
 
 # Secret Keys
-EncryptionKey	= "{{ .EncryptionKey.ExportECDSA | FromECDSA | printf "%x" }}"
-SigningKey	= "{{ .SigningKey | FromECDSA | printf "%x" }}"
-ValidatorSeed	= "{{ .ValidatorKey.Seed | printf "%x" }}"
+EncryptionKey	= "{{ .EncryptionKey.ExportECDSA | FromECDSA | Secret }}"
+SigningKey	= "{{ .SigningKey | FromECDSA | Secret }}"
+ValidatorSeed	= "{{ .ValidatorKey.Seed | Secret }}"
 `
 
 var tmpl *template.Template
@@ -68,6 +69,7 @@ func init() {
 	var err error
 	tmpl, err = template.New("keyper").Funcs(template.FuncMap{
 		"FromECDSA": crypto.FromECDSA,
+		"Secret":    tee.SealSecretAsHex,
 	}).Parse(configTemplate)
 	if err != nil {
 		panic(err)
@@ -78,7 +80,7 @@ func stringToEd25519PrivateKey(f reflect.Type, t reflect.Type, data interface{})
 	if f.Kind() != reflect.String || t != reflect.TypeOf(ed25519.PrivateKey{}) {
 		return data, nil
 	}
-	seed, err := hex.DecodeString(data.(string))
+	seed, err := tee.UnsealSecretFromHex(data.(string))
 	if err != nil {
 		return nil, err
 	}
@@ -92,14 +94,22 @@ func stringToEcdsaPrivateKey(f reflect.Type, t reflect.Type, data interface{}) (
 	if f.Kind() != reflect.String || t != reflect.TypeOf(&ecdsa.PrivateKey{}) {
 		return data, nil
 	}
-	return crypto.HexToECDSA(data.(string))
+	bytes, err := tee.UnsealSecretFromHex(data.(string))
+	if err != nil {
+		return nil, err
+	}
+	return crypto.ToECDSA(bytes)
 }
 
 func stringToEciesPrivateKey(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
 	if f.Kind() != reflect.String || t != reflect.TypeOf(&ecies.PrivateKey{}) {
 		return data, nil
 	}
-	encryptionKeyECDSA, err := crypto.HexToECDSA(data.(string))
+	bytes, err := tee.UnsealSecretFromHex(data.(string))
+	if err != nil {
+		return nil, err
+	}
+	encryptionKeyECDSA, err := crypto.ToECDSA(bytes)
 	if err != nil {
 		return nil, err
 	}
