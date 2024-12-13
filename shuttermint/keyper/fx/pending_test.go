@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"gotest.tools/v3/assert"
+	"os"
 
 	"github.com/shutter-network/shutter/shuttermint/keyper/observe"
 )
@@ -28,7 +29,9 @@ func init() {
 }
 
 func TestAddActions(t *testing.T) {
-	pending := NewPendingActions(filepath.Join(t.TempDir(), "actions.gob"))
+	tmp, err := os.MkdirTemp("", "*")
+	assert.NilError(t, err)
+	pending := NewPendingActions(filepath.Join(tmp, "actions.gob"))
 	pending.AddActions(ActionID(0), myactions[0:10])
 
 	for i := 3; i < 5; i++ {
