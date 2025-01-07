@@ -44,7 +44,7 @@ func TestConfigPersistence(t *testing.T) {
 	assert.NilError(t, cfg.GenerateNewKeys(), "Generating keys")
 
 	var encoding bytes.Buffer
-	var v viper.Viper
+	var v = viper.New()
 	initial_setup_ran := false
 	t.Run("TOML config", func(t *testing.T) {
 		assert.NilError(t, cfg.WriteTOML(&encoding), "Writing TOML")
@@ -67,9 +67,8 @@ func TestConfigPersistence(t *testing.T) {
 		if !initial_setup_ran {
 			t.Skip()
 		}
-		t.Skip("The final Viper unmarshaling into the Config struct seems broken at the moment, but the generating and parsing of the TOML works. Activate this test when config unmarshaling is fixed.")
 		var cfg2 Config
-		cfg2.Unmarshal(&v)
+		cfg2.Unmarshal(v)
 		assert.DeepEqual(t, cfg, cfg2,
 			cmp.Comparer(func(a, b *big.Int) bool { return a.Cmp(b) == 0 }),
 			cmp.Comparer(func(a, b ecies.ECIESParams) bool { return true }))
